@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="WHR 2026"><meta name="mobile-web-app-capable" content="yes">
 <title>Walker's Haute Route 2026 — 3D flyover</title>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" onerror="window.__mlfail=true"></script>
 <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -9,7 +10,9 @@ html,body{margin:0;height:100%;background:#000;font-family:-apple-system,Segoe U
 #hud{position:absolute;left:12px;top:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;color:#fff;text-shadow:0 1px 3px #000}
 #day{font-size:26px;font-weight:700}#route{font-size:14px;opacity:.9;margin-top:2px}
 #stats{text-align:right;font-size:14px;line-height:1.5}#stats b{font-size:22px}
-#bar{position:absolute;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));background:rgba(0,0,0,.55);border-radius:12px;padding:10px 14px;color:#fff;display:flex;gap:12px;align-items:center;backdrop-filter:blur(6px)}
+#bar{position:absolute;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));background:rgba(0,0,0,.55);border-radius:12px;padding:10px 14px;color:#fff;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;backdrop-filter:blur(6px)}
+#bar input[type=range]{flex:1 1 120px;min-width:100px}
+@media (max-width:600px){#bar{padding:8px 10px}button{padding:8px 11px;font-size:14px}#day{font-size:20px}#route{font-size:12px}#stats b{font-size:18px}#stats{font-size:12px}}
 button{background:#fff;color:#000;border:0;border-radius:8px;padding:8px 14px;font-weight:700;font-size:15px}
 input[type=range]{flex:1}
 #prog{position:absolute;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));height:4px;background:rgba(255,255,255,.2)}#fill{height:100%;background:#2ecc71;width:0}
@@ -20,7 +23,7 @@ input[type=range]{flex:1}
 <div id="load"><div style="text-align:center;padding:24px;line-height:1.6"><div id="loadmsg">Loading terrain and imagery…</div></div></div>
 <div id="hud"><div><div id="day">Day 1 of 9</div><div id="route"></div></div><div id="stats"><b id="km">0.0 km</b><br><span id="alt">— m</span> · <span id="gain">+0 m</span><span id="dbg" style="display:none"></span></div></div>
 <div id="prog"><div id="fill"></div></div>
-<div id="bar"><button id="play">Play</button><span style="font-size:13px">Speed</span><input id="speed" type="range" min="1" max="10" value="4"><span id="spv" style="font-size:13px;width:28px">4×</span><button id="rst" style="background:#333;color:#fff">↺</button></div>
+<div id="bar"><button id="play">Play</button><span style="font-size:13px">Speed</span><input id="speed" type="range" min="1" max="10" value="4"><span id="spv" style="font-size:13px;width:28px">4×</span><button id="rst" style="background:#333;color:#fff" title="Restart (R)">↺ Restart</button><button id="fs" style="background:#333;color:#fff" title="Full screen (F)">⛶ Full screen</button></div>
 <script>
 setTimeout(function(){var L=document.getElementById("load");if(L){var m=document.getElementById("loadmsg");m.innerHTML=(window.__mlfail||typeof maplibregl==="undefined")?"This viewer blocks the map.<br><b>Open the file in Safari or Chrome:</b><br>Share → Save to Files → open it from the Files app.":"Still loading map tiles — check your connection.<br>If this stays, open the file in Safari or Chrome.";}},7000);
 if(typeof maplibregl==="undefined"){document.getElementById("loadmsg").innerHTML="This viewer blocks the map.<br><b>Open the file in Safari or Chrome:</b><br>Share → Save to Files → open it from the Files app.";throw new Error("maplibre not loaded");}
@@ -86,6 +89,9 @@ function frame(t){if(!playing)return;try{if(lastT===null)lastT=t;const dt=(t-las
   setCam(pos,false);}catch(e){document.getElementById('route').textContent='Error: '+e.message;}requestAnimationFrame(frame);}
 document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Play';lastT=null;if(playing)requestAnimationFrame(frame);};
 document.getElementById('rst').onclick=()=>{resetDone();pos=0;playing=false;document.getElementById('play').textContent='Play';camLon=null;camBrg=0;setCam(0,true);};
+if(!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen))document.getElementById('fs').style.display='none';
+document.getElementById('fs').onclick=()=>{const d=document.documentElement;if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);}else if(d.requestFullscreen){d.requestFullscreen();}else if(d.webkitRequestFullscreen){d.webkitRequestFullscreen();}};
+document.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}else if(e.key==='r'||e.key==='R'){document.getElementById('rst').click();}else if(e.key==='f'||e.key==='F'){document.getElementById('fs').click();}else if(e.key==='ArrowRight'){pos=Math.min(TOTAL,pos+2000);resetDone();camLon=null;camBrg=0;setCam(pos,true);}else if(e.key==='ArrowLeft'){pos=Math.max(0,pos-2000);resetDone();camLon=null;camBrg=0;setCam(pos,true);}});
 document.getElementById('speed').oninput=e=>document.getElementById('spv').textContent=e.target.value+'×';
 document.getElementById('prog').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();pos=TOTAL*(e.clientX-r.left)/r.width;resetDone();camLon=null;camBrg=0;setCam(pos,true);};
 </script></body></html>
