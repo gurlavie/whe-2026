@@ -18,7 +18,7 @@ input[type=range]{flex:1}
 </style></head><body>
 <div id="map"></div>
 <div id="load"><div style="text-align:center;padding:24px;line-height:1.6"><div id="loadmsg">Loading terrain and imagery…</div></div></div>
-<div id="hud"><div><div id="day">Day 1 of 9</div><div id="route"></div></div><div id="stats"><b id="km">0.0 km</b><br><span id="alt">— m</span> · <span id="gain">+0 m</span></div></div>
+<div id="hud"><div><div id="day">Day 1 of 9</div><div id="route"></div></div><div id="stats"><b id="km">0.0 km</b><br><span id="alt">— m</span> · <span id="gain">+0 m</span><span id="dbg" style="display:none"></span></div></div>
 <div id="prog"><div id="fill"></div></div>
 <div id="bar"><button id="play">Play</button><span style="font-size:13px">Speed</span><input id="speed" type="range" min="1" max="10" value="4"><span id="spv" style="font-size:13px;width:28px">4×</span><button id="rst" style="background:#333;color:#fff">↺</button></div>
 <script>
@@ -36,7 +36,7 @@ const map=new maplibregl.Map({container:'map',style:{version:8,sources:{
   sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Imagery © Esri, Maxar, Earthstar Geographics · Terrain: Mapzen/AWS Terrain Tiles'},
   dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:14}},
   layers:[{id:'sat',type:'raster',source:'sat'}],sky:{}},
-  center:[ROUTE[0][0],ROUTE[0][1]],zoom:14.3,pitch:66,maxPitch:85,attributionControl:true});
+  center:[ROUTE[0][0],ROUTE[0][1]],zoom:13.4,pitch:64,maxPitch:85,attributionControl:true});
 map.on('load',()=>{
   map.setTerrain({source:'dem',exaggeration:1.15});
   map.setSky({'sky-color':'#88b7e6','horizon-color':'#dfe9f3','fog-color':'#dfe9f3','fog-ground-blend':0.5,'horizon-fog-blend':0.6,'sky-horizon-blend':0.7,'atmosphere-blend':0.6});
@@ -58,21 +58,23 @@ window.onerror=function(m){var r=document.getElementById('route');if(r)r.textCon
 // --- interpolation along cumulative distance ---
 function at(dist){let lo=0,hi=cum.length-1;while(lo<hi){const m=(lo+hi)>>1;if(cum[m]<dist)lo=m+1;else hi=m;}const i=Math.max(1,lo);const a=ROUTE[i-1],b=ROUTE[i];const span=cum[i]-cum[i-1];const f=span>0?(dist-cum[i-1])/span:1;return {lon:a[0]+(b[0]-a[0])*f,lat:a[1]+(b[1]-a[1])*f,ele:a[2]+(b[2]-a[2])*f,i,day:b[3],gain:gain[i-1]+(gain[i]-gain[i-1])*f};}
 let pos=0,playing=false,lastT=null,camLon=null,camLat=null,camBrg=0;
+let doneIdx=-1,doneDay=ROUTE[0][3],doneSeg=[],doneFeats=[],frameNo=0;
+function resetDone(){doneIdx=-1;doneDay=ROUTE[0][3];doneSeg=[];doneFeats=[];}
 function brg(a,b){const y=Math.sin((b.lon-a.lon)*Math.PI/180)*Math.cos(b.lat*Math.PI/180),x=Math.cos(a.lat*Math.PI/180)*Math.sin(b.lat*Math.PI/180)-Math.sin(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.cos((b.lon-a.lon)*Math.PI/180);return Math.atan2(y,x)*180/Math.PI;}
 function setCam(dist,snap){
   const p=at(dist),q=at(Math.min(TOTAL,dist+350));
   let b=brg(p,q); if(snap)camBrg=b;
   let db=((b-camBrg+540)%360)-180; camBrg+=db*(snap?1:0.035);
   // look-ahead centre so the hiker sits in the lower third of the view
-  const ahead=220, rad=camBrg*Math.PI/180;
+  const ahead=380, rad=camBrg*Math.PI/180;
   const cLat=p.lat+ahead*Math.cos(rad)/110540, cLon=p.lon+ahead*Math.sin(rad)/(111320*Math.cos(p.lat*Math.PI/180));
   if(camLon===null||snap){camLon=cLon;camLat=cLat;}else{camLon+=(cLon-camLon)*0.08;camLat+=(cLat-camLat)*0.08;}
-  map.jumpTo({center:[camLon,camLat],bearing:camBrg,pitch:66,zoom:14.3});
+  map.jumpTo({center:[camLon,camLat],bearing:camBrg,pitch:64,zoom:13.4});
   if(window.marker){marker.setLngLat([p.lon,p.lat]);marker.getElement().style.borderColor=COL[p.day];}
-  const feats=[];let seg=[];let day=ROUTE[0][3];
-  for(let i=0;i<=p.i;i++){if(i>0&&(jump[i]||ROUTE[i][3]!==day)){feats.push({type:'Feature',properties:{day},geometry:{type:'LineString',coordinates:seg}});seg=[];day=ROUTE[i][3];}seg.push([ROUTE[i][0],ROUTE[i][1]]);}
-  seg.push([p.lon,p.lat]);feats.push({type:'Feature',properties:{day},geometry:{type:'LineString',coordinates:seg}});
-  const s=map.getSource('done');if(s)s.setData({type:'FeatureCollection',features:feats});
+  if(p.i>doneIdx){for(let i=doneIdx+1;i<=p.i;i++){if(i>0&&(jump[i]||ROUTE[i][3]!==doneDay)){doneFeats.push({type:'Feature',properties:{day:doneDay},geometry:{type:'LineString',coordinates:doneSeg}});doneSeg=[];doneDay=ROUTE[i][3];}doneSeg.push([ROUTE[i][0],ROUTE[i][1]]);}doneIdx=p.i;}
+  frameNo++;
+  if(frameNo%6===0||snap){const s=map.getSource('done');if(s)s.setData({type:'FeatureCollection',features:doneFeats.concat([{type:'Feature',properties:{day:doneDay},geometry:{type:'LineString',coordinates:doneSeg.concat([[p.lon,p.lat]])}}])});}
+  document.getElementById('dbg').textContent='f'+frameNo+' · '+Math.round(dist)+' m';
   document.getElementById('day').textContent='Day '+(p.day+1)+' of 9';document.getElementById('day').style.color=COL[p.day];
   document.getElementById('route').textContent=NAMES[p.day];
   document.getElementById('km').textContent=(dist/1000).toFixed(1)+' km';document.getElementById('alt').textContent=Math.round(p.ele)+' m';document.getElementById('gain').textContent='+'+Math.round(p.gain)+' m';
@@ -83,7 +85,7 @@ function frame(t){if(!playing)return;try{if(lastT===null)lastT=t;const dt=(t-las
   if(pos>=TOTAL){pos=TOTAL;playing=false;document.getElementById('play').textContent='Play';}
   setCam(pos,false);}catch(e){document.getElementById('route').textContent='Error: '+e.message;}requestAnimationFrame(frame);}
 document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Play';lastT=null;if(playing)requestAnimationFrame(frame);};
-document.getElementById('rst').onclick=()=>{pos=0;playing=false;document.getElementById('play').textContent='Play';camLon=null;camBrg=0;setCam(0,true);};
+document.getElementById('rst').onclick=()=>{resetDone();pos=0;playing=false;document.getElementById('play').textContent='Play';camLon=null;camBrg=0;setCam(0,true);};
 document.getElementById('speed').oninput=e=>document.getElementById('spv').textContent=e.target.value+'×';
-document.getElementById('prog').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();pos=TOTAL*(e.clientX-r.left)/r.width;camLon=null;camBrg=0;setCam(pos,true);};
+document.getElementById('prog').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();pos=TOTAL*(e.clientX-r.left)/r.width;resetDone();camLon=null;camBrg=0;setCam(pos,true);};
 </script></body></html>
