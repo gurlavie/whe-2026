@@ -36,7 +36,7 @@ const map=new maplibregl.Map({container:'map',style:{version:8,sources:{
   sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Imagery © Esri, Maxar, Earthstar Geographics · Terrain: Mapzen/AWS Terrain Tiles'},
   dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:14}},
   layers:[{id:'sat',type:'raster',source:'sat'}],sky:{}},
-  center:[ROUTE[0][0],ROUTE[0][1]],zoom:11,pitch:60,maxPitch:85,attributionControl:true});
+  center:[ROUTE[0][0],ROUTE[0][1]],zoom:14.3,pitch:66,maxPitch:85,attributionControl:true});
 map.on('load',()=>{
   map.setTerrain({source:'dem',exaggeration:1.15});
   map.setSky({'sky-color':'#88b7e6','horizon-color':'#dfe9f3','fog-color':'#dfe9f3','fog-ground-blend':0.5,'horizon-fog-blend':0.6,'sky-horizon-blend':0.7,'atmosphere-blend':0.6});
@@ -52,27 +52,23 @@ map.on('load',()=>{
   window.marker=new maplibregl.Marker({element:el}).setLngLat([ROUTE[0][0],ROUTE[0][1]]).addTo(map);
   document.getElementById('load').remove();
   setCam(0,true);
+  map.once('idle',()=>{if(!playing){playing=true;document.getElementById('play').textContent='Pause';lastT=null;requestAnimationFrame(frame);}});
 });
+window.onerror=function(m){var r=document.getElementById('route');if(r)r.textContent='Error: '+m;};
 // --- interpolation along cumulative distance ---
 function at(dist){let lo=0,hi=cum.length-1;while(lo<hi){const m=(lo+hi)>>1;if(cum[m]<dist)lo=m+1;else hi=m;}const i=Math.max(1,lo);const a=ROUTE[i-1],b=ROUTE[i];const span=cum[i]-cum[i-1];const f=span>0?(dist-cum[i-1])/span:1;return {lon:a[0]+(b[0]-a[0])*f,lat:a[1]+(b[1]-a[1])*f,ele:a[2]+(b[2]-a[2])*f,i,day:b[3],gain:gain[i-1]+(gain[i]-gain[i-1])*f};}
 let pos=0,playing=false,lastT=null,camLon=null,camLat=null,camBrg=0;
 function brg(a,b){const y=Math.sin((b.lon-a.lon)*Math.PI/180)*Math.cos(b.lat*Math.PI/180),x=Math.cos(a.lat*Math.PI/180)*Math.sin(b.lat*Math.PI/180)-Math.sin(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.cos((b.lon-a.lon)*Math.PI/180);return Math.atan2(y,x)*180/Math.PI;}
 function setCam(dist,snap){
-  const p=at(dist),q=at(Math.min(TOTAL,dist+400));
-  let b=brg(p,q); if(camBrg===0&&snap)camBrg=b;
-  let db=((b-camBrg+540)%360)-180; camBrg+=db*(snap?1:0.04);
-  const back=700,up=380;  // camera 700 m behind, 380 m above the hiker (terrain-aware)
-  const rad=camBrg*Math.PI/180;const dlat=-back*Math.cos(rad)/110540,dlon=-back*Math.sin(rad)/(111320*Math.cos(p.lat*Math.PI/180));
-  const tLon=p.lon+dlon,tLat=p.lat+dlat;
-  if(camLon===null||snap){camLon=tLon;camLat=tLat;}else{camLon+=(tLon-camLon)*0.08;camLat+=(tLat-camLat)*0.08;}
-  let ground=map.queryTerrainElevation([camLon,camLat]);if(ground===null||ground===undefined)ground=p.ele;
-  const camAlt=Math.max(ground+120,p.ele+up);
-  const cam=map.getFreeCameraOptions();
-  cam.position=maplibregl.MercatorCoordinate.fromLngLat([camLon,camLat],camAlt);
-  cam.lookAtPoint([p.lon,p.lat]);
-  map.setFreeCameraOptions(cam);
+  const p=at(dist),q=at(Math.min(TOTAL,dist+350));
+  let b=brg(p,q); if(snap)camBrg=b;
+  let db=((b-camBrg+540)%360)-180; camBrg+=db*(snap?1:0.035);
+  // look-ahead centre so the hiker sits in the lower third of the view
+  const ahead=220, rad=camBrg*Math.PI/180;
+  const cLat=p.lat+ahead*Math.cos(rad)/110540, cLon=p.lon+ahead*Math.sin(rad)/(111320*Math.cos(p.lat*Math.PI/180));
+  if(camLon===null||snap){camLon=cLon;camLat=cLat;}else{camLon+=(cLon-camLon)*0.08;camLat+=(cLat-camLat)*0.08;}
+  map.jumpTo({center:[camLon,camLat],bearing:camBrg,pitch:66,zoom:14.3});
   if(window.marker){marker.setLngLat([p.lon,p.lat]);marker.getElement().style.borderColor=COL[p.day];}
-  // walked line
   const feats=[];let seg=[];let day=ROUTE[0][3];
   for(let i=0;i<=p.i;i++){if(i>0&&(jump[i]||ROUTE[i][3]!==day)){feats.push({type:'Feature',properties:{day},geometry:{type:'LineString',coordinates:seg}});seg=[];day=ROUTE[i][3];}seg.push([ROUTE[i][0],ROUTE[i][1]]);}
   seg.push([p.lon,p.lat]);feats.push({type:'Feature',properties:{day},geometry:{type:'LineString',coordinates:seg}});
@@ -82,10 +78,10 @@ function setCam(dist,snap){
   document.getElementById('km').textContent=(dist/1000).toFixed(1)+' km';document.getElementById('alt').textContent=Math.round(p.ele)+' m';document.getElementById('gain').textContent='+'+Math.round(p.gain)+' m';
   document.getElementById('fill').style.width=(100*dist/TOTAL)+'%';
 }
-function frame(t){if(!playing)return;if(lastT===null)lastT=t;const dt=(t-lastT)/1000;lastT=t;
+function frame(t){if(!playing)return;try{if(lastT===null)lastT=t;const dt=(t-lastT)/1000;lastT=t;
   const spd=+document.getElementById('speed').value;pos+=dt*60*spd;   // 60 m/s at 1x -> ~26 min for the whole route at 1x
   if(pos>=TOTAL){pos=TOTAL;playing=false;document.getElementById('play').textContent='Play';}
-  setCam(pos,false);requestAnimationFrame(frame);}
+  setCam(pos,false);}catch(e){document.getElementById('route').textContent='Error: '+e.message;}requestAnimationFrame(frame);}
 document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Play';lastT=null;if(playing)requestAnimationFrame(frame);};
 document.getElementById('rst').onclick=()=>{pos=0;playing=false;document.getElementById('play').textContent='Play';camLon=null;camBrg=0;setCam(0,true);};
 document.getElementById('speed').oninput=e=>document.getElementById('spv').textContent=e.target.value+'×';
